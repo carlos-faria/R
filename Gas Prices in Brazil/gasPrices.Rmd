@@ -1,0 +1,184 @@
+---
+title: "Gas Prices in Brazil"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+In this project, my intent is to show if there is a historically difference in the mean price of a given source of energy among states within a given region in Brazil. Basically, my intent is to practice the use of ANOVA and Tukey tests.
+
+That said, I'll stick to using only the Mean Market Value price as a target variable. I'll also study data based on final dates that are greater than a given start date. I won't study the data on a given date (for example, the last one) due to the very few ammount of records I'd have. Thus the need to use some historical data as well.
+
+
+```{r}
+library('tidyr')
+library('dplyr')
+library('readr')
+```
+
+
+```{r}
+gasPrices_raw <- read.table(file = '2004-2019.tsv', sep = '\t', header = TRUE, encoding="UTF-8")
+str(gasPrices_raw)
+```
+
+
+
+```{r}
+head(gasPrices_raw)
+#print.data.frame(head(gasPrices_raw))
+```
+
+I'll create a new dataframe to change some columns and factor names and to parse the final date column from factor to date format.
+
+
+```{r}
+gasPrices_temp <- gasPrices_raw
+
+names(gasPrices_temp)[3] <- 'finalDate'
+names(gasPrices_temp)[4] <- 'region'
+names(gasPrices_temp)[5] <- 'state'
+names(gasPrices_temp)[6] <- 'product'
+names(gasPrices_temp)[9] <- 'meanMarketValue'
+
+levels(gasPrices_temp$region) <- c('Center-West', 'Northeast',
+                                   'North', 'Southeast', 'South')
+levels(gasPrices_temp$product)[5] <- 'OLEO DIESEL'
+levels(gasPrices_temp$product)[6] <- 'OLEO DIESEL S10'
+
+gasPrices_temp$finalDate <- as.Date(gasPrices_temp$finalDate)
+```
+
+
+I'll define the start date mentioned earlier. Also, I'll define a giver product to study, since the study of all products would result in a long publication.
+
+
+```{r}
+startDate <- as.Date('01/08/2018', '%d/%m/%Y')
+productOfInterest <- 'GASOLINA COMUM'
+
+gasPrices_allProducts <- gasPrices_temp %>% 
+                            filter(finalDate>startDate) %>% 
+                            select(finalDate, region, state,  product, meanMarketValue) %>% 
+                            arrange(state) %>%
+                            arrange(region)
+
+gasPrices <- gasPrices_allProducts %>% 
+                filter(product==productOfInterest) 
+
+head(gasPrices)
+```
+
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+
+evolutionPerRegion <- gasPrices %>% group_by(finalDate, region) %>% summarize(mean = mean(meanMarketValue))
+
+meanPerState <- gasPrices %>% group_by(finalDate, region) %>% summarize(mean = mean(meanMarketValue)) %>%
+  ungroup() %>%
+  select(region, mean)
+
+```
+
+
+```{r, fig.width=9, fig.height=12}
+p1 <- ggplot(aes(x=finalDate, y=mean, color=region), data=evolutionPerRegion) +
+  geom_line() + 
+  labs(color='Region: ') +
+  xlab('Final Date') + 
+  ylab('Mean Market Value') + 
+  ggtitle('Evolution of fuel price amongs regions') + 
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "bottom",
+        panel.background = element_rect(fill = 'white'),
+        panel.grid.major = element_line(alpha('black', 0.4), linetype='dashed', size=.1),
+        panel.grid.minor = element_line(alpha('black', 0.2), linetype='dashed', size=.1)) +
+  
+  guides(fill=guide_legend(title="New Legend Title"))
+
+p2 <- ggplot(aes(x=region, y=mean, color=region), data=meanPerState) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) + 
+  scale_x_discrete() + 
+  ylab('Mean Market Value') + 
+  ggtitle('Evolution of fuel price in North region') + 
+  xlab('') + 
+  ylab('') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme(legend.position = "none",
+        panel.background = element_rect(fill = "white"))
+  #      axis.title.x=element_blank())
+  #      axis.text.x=element_blank(),
+  #      axis.ticks.x=element_blank())
+
+margin <- theme(plot.margin = unit(c(1,1,1.5,1), "cm"))
+grid.arrange(grobs=lapply(list(p1, p2), "+", margin))
+
+
+```
+
+
+
+
+
+```{r}
+for (region_str in unique(gasPrices$region)){
+  anova <- aov(meanMarketValue ~ state, gasPrices %>% filter(region==region_str))
+  print('***************************************')
+  print(region_str)
+  print('***************************************')
+  print(summary(anova))
+  print(TukeyHSD(anova, ordered=TRUE))
+  cat(rep('\n', 2))
+}
+```
+
+
+
+```{r}
+meanByState <- gasPrices %>% 
+                   group_by(region, state) %>% 
+                   summarize(mean = mean(meanMarketValue)) %>%
+                   top_n(2, mean)
+
+print.data.frame(meanByState)
+```
+
+
+
+###############################
+
+
+```{r}
+for (prod in unique(gasPrices_allProducts$product)){
+topMeanValues <- gasPrices_allProducts %>% 
+                  filter(product==prod) %>%
+                  select(state, meanMarketValue) %>%
+                  group_by(state) %>%
+                  summarize(mean = mean(meanMarketValue)) %>%
+                  arrange(desc(mean))
+cat(c('product: ', prod, '\n'))
+print.data.frame(topMeanValues[1:5,])
+cat('\n')
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
